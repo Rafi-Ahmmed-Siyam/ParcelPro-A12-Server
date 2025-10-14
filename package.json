@@ -1,0 +1,22 @@
+{
+   "name": "parcelpro-server",
+   "version": "1.0.0",
+   "description": "A Parcel Management Syatem Backend",
+   "main": "index.js",
+   "scripts": {
+      "test": "echo \"Error: no test specified\" && exit 1",
+      "start": "index.js"
+   },
+   "keywords": [
+      "ParcelPro"
+   ],
+   "author": "Rafi Ahmmed Siyam",
+   "license": "ISC",
+   "dependencies": {
+      "cors": "^2.8.5",
+      "dotenv": "^17.2.3",
+      "express": "^5.1.0",
+      "mongodb": "^6.20.0",
+      "morgan": "^1.10.1"
+   }
+}
