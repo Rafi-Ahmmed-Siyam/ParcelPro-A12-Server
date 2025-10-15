@@ -24,17 +24,34 @@ const client = new MongoClient(uri, {
 //::::::::::JWT related API and Middleware
 app.post('/jwt', async (req, res) => {
    const { email } = req.body;
-   console.log(email);
+   // console.log(email);
    const token = jwt.sign({ email: email }, process.env.JWT_SECRET, {
       expiresIn: '1d',
    });
    res.send({ token });
 });
 
+const verifyToken = async (req, res, next) => {
+   const accessToken = req.headers.authorization;
+   if (!accessToken)
+      return res.status(401).send({ message: 'Unauthorize Access!' });
+   const token = accessToken?.split(' ')[1];
+   if (!token) return res.status(401).send({ message: 'Unauthorize Access!' });
+   // Verify Token
+   jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+      if (err) {
+         return res.status(401).send({ message: 'Unauthorize Access!' });
+      }
+      req.user = decoded;
+      next();
+   });
+};
+
 async function run() {
    try {
       //:::::Declare all Database collection
-      const userCollection = client.db('ParcelPro').collection('users');
+      const usersCollection = client.db('ParcelPro').collection('users');
+      const parcelsCollection = client.db('ParcelPro').collection('parcels');
       //:::::Middleware using DB
 
       //:::::All crud operation API
@@ -46,10 +63,20 @@ async function run() {
          // console.log(userData);
          const query = { email: userData.email };
 
-         const user = await userCollection.findOne(query);
+         const user = await usersCollection.findOne(query);
          if (user) return res.send({ message: 'User already exists' });
 
-         const result = await userCollection.insertOne(userData);
+         const result = await usersCollection.insertOne(userData);
+         res.send(result);
+      });
+
+      //// Parcel Related APIs ::::-------------(Parcel)
+
+      // Save parcel data in DB
+      app.post('/parcels', verifyToken, async (req, res) => {
+         const parcelData = req.body;
+         console.log(parcelData);
+         const result = await parcelsCollection.insertOne(parcelData);
          res.send(result);
       });
 
