@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const app = express();
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const morgan = require('morgan');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
@@ -75,8 +75,57 @@ async function run() {
       // Save parcel data in DB
       app.post('/parcels', verifyToken, async (req, res) => {
          const parcelData = req.body;
-         console.log(parcelData);
+         // console.log(parcelData);
          const result = await parcelsCollection.insertOne(parcelData);
+         res.send(result);
+      });
+
+      // // Get all Parcel data for Admin
+      // app.get('/parcels', verifyToken, async (req, res) => {
+      //    const result = await parcelsCollection.find().toArray();
+      //    res.send(result);
+      // });
+
+      // Get specific parcel data for user and Filter parcel by ststus
+      app.get('/parcels', verifyToken, async (req, res) => {
+         const email = req.query.email;
+         const status = req.query.status;
+         // console.log(email, status);
+
+         let query = { senderEmail: email };
+         if (status !== 'all') query.bookingStatus = status;
+
+         const result = await parcelsCollection.find(query).toArray();
+         res.send(result);
+      });
+
+      // Get a single parcel data
+      app.get('/parcels/:id', verifyToken, async (req, res) => {
+         const id = req.params.id;
+         const query = { _id: new ObjectId(id) };
+         const result = await parcelsCollection.findOne(query);
+         res.send(result);
+      });
+
+      // Delete parcel data by user
+      app.delete('/parcels/:id', verifyToken, async (req, res) => {
+         const id = req.params.id;
+         console.log(id);
+         const query = { _id: new ObjectId(id) };
+         const result = await parcelsCollection.deleteOne(query);
+         res.send(result);
+      });
+
+      // Update user parcel data
+      app.put('/parcels/:id',verifyToken, async (req, res) => {
+         const id = req.params.id;
+         const updateData = req.body;
+         const filter = { _id: new ObjectId(id) };
+         const updateDoc = {
+            $set: updateData,
+         };
+
+         const result = await parcelsCollection.updateOne(filter, updateDoc);
          res.send(result);
       });
 
