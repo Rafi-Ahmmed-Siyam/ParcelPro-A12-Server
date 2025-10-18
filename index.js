@@ -53,10 +53,39 @@ async function run() {
       const usersCollection = client.db('ParcelPro').collection('users');
       const parcelsCollection = client.db('ParcelPro').collection('parcels');
       //:::::Middleware using DB
+      const verifyAdmin = async (req, res, next) => {
+         const jwtUserEmail = req.user.email;
+         const query = { email: jwtUserEmail };
+         const user = await usersCollection.findOne(query);
+
+         if (!user && user.role !== 'Admin')
+            return res
+               .status(403)
+               .send({ message: 'Forbidden Access! Admin Only Actions!' });
+         next();
+      };
+      const verifyDeliveryMan = async (req, res, next) => {
+         const jwtUserEmail = req.user.email;
+         const query = { email: jwtUserEmail };
+         const user = await usersCollection.findOne(query);
+
+         if (!user && user.role !== 'DeliveryMen')
+            return res
+               .status(403)
+               .send({ message: 'Forbidden Access! Admin Only Actions!' });
+         next();
+      };
 
       //:::::All crud operation API
 
       //// User Related APIs ::::-------------(USER)
+      // Get user role
+      app.get('/users/role/:email', async (req, res) => {
+         const email = req.params.email;
+         const result = await usersCollection.findOne({ email });
+         res.send({ role: result?.role });
+      });
+
       // Save user data in DB when user signup
       app.post('/users', async (req, res) => {
          const userData = req.body;
@@ -70,6 +99,62 @@ async function run() {
          res.send(result);
       });
 
+      // Get All userData  by ADMIN
+      app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
+         const result = await usersCollection
+            .aggregate([
+               {
+                  $lookup: {
+                     from: 'parcels',
+                     localField: 'email',
+                     foreignField: 'senderEmail',
+                     as: 'parcelData',
+                  },
+               },
+
+               {
+                  $addFields: {
+                     parcelsBooked: { $size: '$parcelData' },
+                     phone: {
+                        $ifNull: [{ $first: '$parcelData.senderPhone' }, null],
+                     },
+                  },
+               },
+               {
+                  $unwind: {
+                     path: '$parcelData',
+                     preserveNullAndEmptyArrays: true,
+                  },
+               },
+               {
+                  $group: {
+                     _id: {
+                        _id: '$_id',
+                        name: '$name',
+                        email: '$email',
+                        phone: '$phone',
+                        parcelsBooked: '$parcelsBooked',
+                     },
+                     totalCost: { $sum: { $ifNull: ['$parcelData.price', 0] } },
+                  },
+               },
+               {
+                  $project: {
+                     _id: 0,
+                     _id: '$_id._id',
+                     name: '$_id.name',
+                     email: '$_id.email',
+                     phone: '$_id.phone',
+                     parcelsBooked: '$_id.parcelsBooked',
+                     totalCost: 1,
+                  },
+               },
+            ])
+            .toArray();
+
+         res.send(result);
+      });
+
       //// Parcel Related APIs ::::-------------(Parcel)
 
       // Save parcel data in DB
@@ -80,17 +165,23 @@ async function run() {
          res.send(result);
       });
 
-      // // Get all Parcel data for Admin
-      // app.get('/parcels', verifyToken, async (req, res) => {
-      //    const result = await parcelsCollection.find().toArray();
-      //    res.send(result);
-      // });
+      // Get all Parcel data for Admin
+      app.get('/parcels/admin', verifyToken, verifyAdmin, async (req, res) => {
+         const result = await parcelsCollection.find().toArray();
+         res.send(result);
+      });
 
       // Get specific parcel data for user and Filter parcel by ststus
       app.get('/parcels', verifyToken, async (req, res) => {
          const email = req.query.email;
+         const jwtEmail = req.user.email;
          const status = req.query.status;
          // console.log(email, status);
+
+         if (jwtEmail !== email)
+            return res
+               .status(403)
+               .send({ message: 'Forbidden Access! Email Not Match!' });
 
          let query = { senderEmail: email };
          if (status !== 'all') query.bookingStatus = status;
@@ -117,7 +208,7 @@ async function run() {
       });
 
       // Update user parcel data
-      app.put('/parcels/:id',verifyToken, async (req, res) => {
+      app.put('/parcels/:id', verifyToken, async (req, res) => {
          const id = req.params.id;
          const updateData = req.body;
          const filter = { _id: new ObjectId(id) };
