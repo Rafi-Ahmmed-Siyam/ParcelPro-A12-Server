@@ -64,6 +64,7 @@ async function run() {
                .send({ message: 'Forbidden Access! Admin Only Actions!' });
          next();
       };
+
       const verifyDeliveryMan = async (req, res, next) => {
          const jwtUserEmail = req.user.email;
          const query = { email: jwtUserEmail };
@@ -72,20 +73,13 @@ async function run() {
          if (!user && user.role !== 'DeliveryMen')
             return res
                .status(403)
-               .send({ message: 'Forbidden Access! Admin Only Actions!' });
+               .send({ message: 'Forbidden Access! Delivery Man Actions!' });
          next();
       };
 
       //:::::All crud operation API
 
       //// User Related APIs ::::-------------(USER)
-      // Get user role
-      app.get('/users/role/:email', async (req, res) => {
-         const email = req.params.email;
-         const result = await usersCollection.findOne({ email });
-         res.send({ role: result?.role });
-      });
-
       // Save user data in DB when user signup
       app.post('/users', async (req, res) => {
          const userData = req.body;
@@ -97,6 +91,28 @@ async function run() {
 
          const result = await usersCollection.insertOne(userData);
          res.send(result);
+      });
+
+      // Get user role
+      app.get('/users/role/:email', verifyToken, async (req, res) => {
+         const email = req.params.email;
+         const result = await usersCollection.findOne({ email });
+
+         if (!result) {
+            return res.status(404).send({ message: 'User not found' });
+         }
+         if (result.role === 'DeliveryMen' && !result.phone) {
+            return res.send({
+               role: result?.role,
+               verified: false,
+               id: result._id,
+            });
+         }
+         return res.send({
+            role: result?.role,
+            verified: true,
+            id: result?._id,
+         });
       });
 
       // Get All userData  by ADMIN
@@ -133,6 +149,8 @@ async function run() {
                         name: '$name',
                         email: '$email',
                         phone: '$phone',
+                        role: '$role',
+                        createdAt: '$createdAt',
                         parcelsBooked: '$parcelsBooked',
                      },
                      totalCost: { $sum: { $ifNull: ['$parcelData.price', 0] } },
@@ -145,8 +163,15 @@ async function run() {
                      name: '$_id.name',
                      email: '$_id.email',
                      phone: '$_id.phone',
+                     role: '$_id.role',
                      parcelsBooked: '$_id.parcelsBooked',
+                     createdAt: '$_id.createdAt',
                      totalCost: 1,
+                  },
+               },
+               {
+                  $sort: {
+                     createdAt: -1,
                   },
                },
             ])
@@ -155,8 +180,79 @@ async function run() {
          res.send(result);
       });
 
-      //// Parcel Related APIs ::::-------------(Parcel)
+      // Change User Role by admin
+      app.patch('/users/role', verifyToken, verifyAdmin, async (req, res) => {
+         const { id, role } = req.body;
+         console.log(id, role);
+         const query = { _id: new ObjectId(id) };
+         const updateDoc = {
+            $set: { role },
+         };
+         const result = await usersCollection.updateOne(query, updateDoc);
+         res.send(result);
+      });
 
+      // Get all deliveryMen by  Admin------>
+      app.get(
+         '/users/deliveryMen',
+         verifyToken,
+         verifyAdmin,
+         async (req, res) => {
+            const query = { role: 'DeliveryMen' };
+            const result = await usersCollection.find(query).toArray();
+            res.send(result);
+         }
+      );
+
+      //------------? Delivery man PAIs
+      // Add a number if deliveryman is not set a number
+      app.patch(
+         '/deliveryman',
+         verifyToken,
+         verifyDeliveryMan,
+         async (req, res) => {
+            const { id, phone } = req.body;
+            console.log(id, phone);
+            const query = { _id: new ObjectId(id) };
+            const updateDoc = {
+               $set: { phone },
+            };
+            const result = await usersCollection.updateOne(query, updateDoc);
+            res.send(result);
+         }
+      );
+
+      // Get all Deliveries for specific [DeliveryMam]
+      app.get(
+         '/deliveries/:id',
+         verifyToken,
+         verifyDeliveryMan,
+         async (req, res) => {
+            const id = req.params.id;
+            const query = {
+               deliveryManId: id,
+            };
+            const result = await parcelsCollection.find(query).toArray();
+            res.send(result);
+         }
+      );
+      // Update delivery status by deliveryman
+      app.patch('/deliveries', async (req, res) => {
+         const { parcelId, status } = req.body;
+         console.log(parcelId, status);
+
+         const filter = { _id: new ObjectId(parcelId) };
+         const updateDoc = {
+            $set: {
+               bookingStatus: status,
+            },
+         };
+
+         const result = await parcelsCollection.updateOne(filter, updateDoc);
+         res.send(result);
+      });
+
+      //// Parcel Related APIs ::::-------------(Parcel)
       // Save parcel data in DB
       app.post('/parcels', verifyToken, async (req, res) => {
          const parcelData = req.body;
@@ -165,7 +261,7 @@ async function run() {
          res.send(result);
       });
 
-      // Get all Parcel data for Admin
+      // Get all Parcel data by Admin
       app.get('/parcels/admin', verifyToken, verifyAdmin, async (req, res) => {
          const result = await parcelsCollection.find().toArray();
          res.send(result);
@@ -219,6 +315,27 @@ async function run() {
          const result = await parcelsCollection.updateOne(filter, updateDoc);
          res.send(result);
       });
+
+      // Assign a delivery man for Parcel
+      app.patch(
+         '/parcels/assign',
+         verifyToken,
+         verifyAdmin,
+         async (req, res) => {
+            const { parcelId, deliveryManId, approxDeliveryDate } = req.body;
+            const filter = { _id: new ObjectId(parcelId) };
+            const updateDoc = {
+               $set: {
+                  deliveryManId,
+                  approxDeliveryDate,
+                  bookingStatus: 'On The Way',
+               },
+            };
+            //
+            const result = await parcelsCollection.updateOne(filter, updateDoc);
+            res.send(result);
+         }
+      );
 
       // await client.connect();
       // Send a ping to confirm a successful connection
