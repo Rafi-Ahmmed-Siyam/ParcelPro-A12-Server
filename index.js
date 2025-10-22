@@ -115,8 +115,11 @@ async function run() {
          });
       });
 
-      // Get All userData  by ADMIN
+      // Get All userData  by ADMIN {Pagination}
       app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
+         const currentPage = parseInt(req.query.currentPage);
+         const limit = parseInt(req.query.limit);
+         const skip = (currentPage - 1) * limit;
          const result = await usersCollection
             .aggregate([
                {
@@ -174,10 +177,22 @@ async function run() {
                      createdAt: -1,
                   },
                },
+               {
+                  $skip: skip,
+               },
+               {
+                  $limit: limit,
+               },
             ])
             .toArray();
 
          res.send(result);
+      });
+
+      // Get all user count for Pagination
+      app.get('/users/count', verifyToken, verifyAdmin, async (req, res) => {
+         const totalUser = await usersCollection.estimatedDocumentCount();
+         res.send({ totalCount: totalUser });
       });
 
       // Change User Role by admin
@@ -236,21 +251,27 @@ async function run() {
             res.send(result);
          }
       );
+
       // Update delivery status by deliveryman
-      app.patch('/deliveries', async (req, res) => {
-         const { parcelId, status } = req.body;
-         console.log(parcelId, status);
+      app.patch(
+         '/deliveries',
+         verifyToken,
+         verifyDeliveryMan,
+         async (req, res) => {
+            const { parcelId, status } = req.body;
+            console.log(parcelId, status);
 
-         const filter = { _id: new ObjectId(parcelId) };
-         const updateDoc = {
-            $set: {
-               bookingStatus: status,
-            },
-         };
+            const filter = { _id: new ObjectId(parcelId) };
+            const updateDoc = {
+               $set: {
+                  bookingStatus: status,
+               },
+            };
 
-         const result = await parcelsCollection.updateOne(filter, updateDoc);
-         res.send(result);
-      });
+            const result = await parcelsCollection.updateOne(filter, updateDoc);
+            res.send(result);
+         }
+      );
 
       //// Parcel Related APIs ::::-------------(Parcel)
       // Save parcel data in DB
@@ -263,7 +284,27 @@ async function run() {
 
       // Get all Parcel data by Admin
       app.get('/parcels/admin', verifyToken, verifyAdmin, async (req, res) => {
-         const result = await parcelsCollection.find().toArray();
+         const fromDate = req.query.fromDate;
+         const toDate = req.query.toDate;
+         console.log(fromDate);
+         console.log(toDate);
+
+         let query = {};
+         if (fromDate && toDate) {
+            query = {
+               deliveryDate: {
+                  $gte: fromDate,
+                  $lte: toDate,
+               },
+            };
+         }
+
+         const result = await parcelsCollection
+            .find(query)
+            .sort({
+               createdAt: -1,
+            })
+            .toArray();
          res.send(result);
       });
 
@@ -282,7 +323,12 @@ async function run() {
          let query = { senderEmail: email };
          if (status !== 'all') query.bookingStatus = status;
 
-         const result = await parcelsCollection.find(query).toArray();
+         const result = await parcelsCollection
+            .find(query)
+            .sort({
+               createdAt: -1,
+            })
+            .toArray();
          res.send(result);
       });
 
