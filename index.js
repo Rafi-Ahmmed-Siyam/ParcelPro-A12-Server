@@ -52,6 +52,7 @@ async function run() {
       //:::::Declare all Database collection
       const usersCollection = client.db('ParcelPro').collection('users');
       const parcelsCollection = client.db('ParcelPro').collection('parcels');
+      const reviewsCollection = client.db('ParcelPro').collection('reviews');
       //:::::Middleware using DB
       const verifyAdmin = async (req, res, next) => {
          const jwtUserEmail = req.user.email;
@@ -116,7 +117,7 @@ async function run() {
       });
 
       // Get All userData  by ADMIN {Pagination}
-      app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
+      app.get('/users/admin', verifyToken, verifyAdmin, async (req, res) => {
          const currentPage = parseInt(req.query.currentPage);
          const limit = parseInt(req.query.limit);
          const skip = (currentPage - 1) * limit;
@@ -258,8 +259,15 @@ async function run() {
          verifyToken,
          verifyDeliveryMan,
          async (req, res) => {
-            const { parcelId, status } = req.body;
-            console.log(parcelId, status);
+            const { parcelId, status, deliveryMenId } = req.body;
+            console.log(parcelId, status, deliveryMenId);
+
+            if (status === 'Delivered') {
+               const userFilter = { _id: new ObjectId(deliveryMenId) };
+               await usersCollection.updateOne(userFilter, {
+                  $inc: { deliveredCount: 1 },
+               });
+            }
 
             const filter = { _id: new ObjectId(parcelId) };
             const updateDoc = {
@@ -308,7 +316,7 @@ async function run() {
          res.send(result);
       });
 
-      // Get specific parcel data for user and Filter parcel by ststus
+      // Get specific parcel data for user and Filter parcel by status
       app.get('/parcels', verifyToken, async (req, res) => {
          const email = req.query.email;
          const jwtEmail = req.user.email;
@@ -362,7 +370,7 @@ async function run() {
          res.send(result);
       });
 
-      // Assign a delivery man for Parcel
+      // Assign a delivery man for Parcel by ADMIN
       app.patch(
          '/parcels/assign',
          verifyToken,
@@ -382,6 +390,37 @@ async function run() {
             res.send(result);
          }
       );
+
+      // rating and feedback related apis
+      // get a deliveryMan data by id this is for user can show who delivered parcel for him/her
+      app.get('/deliveryMen/:id', verifyToken, async (req, res) => {
+         const id = req.params.id;
+         const query = { _id: new ObjectId(id) };
+         const result = await usersCollection.findOne(query);
+         res.send(result);
+      });
+
+      // Save a user feedback in feedback collection
+      app.post('/reviews', verifyToken, async (req, res) => {
+         const feedbackData = req.body;
+         const result = await reviewsCollection.insertOne(feedbackData);
+         res.send(result);
+      });
+
+      // Get review for specific deliveryMen
+      app.get(
+         '/reviews/:id',
+         verifyToken,
+         verifyDeliveryMan,
+         async (req, res) => {
+            const id = req.params.id;
+            const query = { deliveryMenId: id };
+            const result = await reviewsCollection.find(query).toArray();
+            res.send(result);
+         }
+      );
+
+      // Give review by user
 
       // await client.connect();
       // Send a ping to confirm a successful connection
