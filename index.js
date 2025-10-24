@@ -214,8 +214,35 @@ async function run() {
          verifyToken,
          verifyAdmin,
          async (req, res) => {
-            const query = { role: 'DeliveryMen' };
-            const result = await usersCollection.find(query).toArray();
+            // const result = await usersCollection.find(query).toArray();
+            const result = await usersCollection
+               .aggregate([
+                  { $match: { role: 'DeliveryMen' } },
+                  { $addFields: { stringId: { $toString: '$_id' } } },
+                  {
+                     $lookup: {
+                        from: 'reviews',
+                        localField: 'stringId',
+                        foreignField: 'deliveryMenId',
+                        as: 'reviews',
+                     },
+                  },
+                  {
+                     $addFields: { averageRating: { $avg: '$reviews.rating' } },
+                  },
+                  {
+                     $project: {
+                        _id: 1,
+                        name: 1,
+                        image: 1,
+                        phone: 1,
+                        email: 1,
+                        deliveredCount: 1,
+                        averageRating: 1,
+                     },
+                  },
+               ])
+               .toArray();
             res.send(result);
          }
       );
@@ -248,7 +275,10 @@ async function run() {
             const query = {
                deliveryManId: id,
             };
-            const result = await parcelsCollection.find(query).toArray();
+            const result = await parcelsCollection
+               .find(query)
+               .sort({ createdAt: -1 })
+               .toArray();
             res.send(result);
          }
       );
@@ -420,7 +450,68 @@ async function run() {
          }
       );
 
-      // Give review by user
+      // ADMIN stats
+      app.get('/admin/stats', verifyToken, verifyAdmin, async (req, res) => {
+         const totalParcels = await parcelsCollection.estimatedDocumentCount();
+         const totalUsers = await usersCollection.estimatedDocumentCount();
+         const totalDelivered = await parcelsCollection.countDocuments({
+            bookingStatus: 'Delivered',
+         });
+
+         // Booking count par date
+         const bookingPerDate = await parcelsCollection
+            .aggregate([
+               {
+                  $group: {
+                     _id: {
+                        $dateToString: {
+                           format: '%d-%m-%Y',
+                           date: { $toDate: '$createdAt' },
+                           timezone: '+06:00',
+                        },
+                     },
+                     totalBookings: { $sum: 1 },
+                  },
+               },
+               { $sort: { _id: -1 } },
+            ])
+            .toArray();
+         // book vs delivery
+         const bookedVsDelivery = await parcelsCollection
+            .aggregate([
+               {
+                  $group: {
+                     _id: {
+                        $dateToString: {
+                           format: '%d-%m-%Y',
+                           date: { $toDate: '$createdAt' },
+                           timezone: '+06:00',
+                        },
+                     },
+                     totalBookings: { $sum: 1 },
+                     totalDelivered: {
+                        $sum: {
+                           $cond: [
+                              { $eq: ['$bookingStatus', 'Delivered'] },
+                              1,
+                              0,
+                           ],
+                        },
+                     },
+                  },
+               },
+               { $sort: { _id: -1 } },
+            ])
+            .toArray();
+
+         res.send({
+            totalParcels,
+            totalUsers,
+            totalDelivered,
+            bookingPerDate,
+            bookedVsDelivery,
+         });
+      });
 
       // await client.connect();
       // Send a ping to confirm a successful connection
