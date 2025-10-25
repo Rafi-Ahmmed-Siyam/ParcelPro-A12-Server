@@ -5,6 +5,7 @@ const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const morgan = require('morgan');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const port = process.env.port || 10000;
 
 app.use(morgan('dev'));
@@ -53,6 +54,7 @@ async function run() {
       const usersCollection = client.db('ParcelPro').collection('users');
       const parcelsCollection = client.db('ParcelPro').collection('parcels');
       const reviewsCollection = client.db('ParcelPro').collection('reviews');
+      const paymentsCollection = client.db('ParcelPro').collection('payments');
       //:::::Middleware using DB
       const verifyAdmin = async (req, res, next) => {
          const jwtUserEmail = req.user.email;
@@ -421,6 +423,18 @@ async function run() {
          }
       );
 
+      // if payment Successful so add field in parcel isPaid
+      app.patch('/parcels-paid/:id', verifyToken, async (req, res) => {
+         const parcelId = req.params.id;
+         const filter = { _id: new ObjectId(parcelId) };
+         const updateDoc = {
+            $set: { isPaid: true },
+         };
+
+         const result = await parcelsCollection.updateOne(filter, updateDoc);
+         res.send(result);
+      });
+
       // rating and feedback related apis
       // get a deliveryMan data by id this is for user can show who delivered parcel for him/her
       app.get('/deliveryMen/:id', verifyToken, async (req, res) => {
@@ -450,6 +464,51 @@ async function run() {
          }
       );
 
+      // Create payment intent for Payment (STRIPE)
+      app.post('/payment-Intent', verifyToken, async (req, res) => {
+         const { parcelId } = req.body;
+         const parcel = await parcelsCollection.findOne({
+            _id: new ObjectId(parcelId),
+         });
+         if (!parcel)
+            return res.status(400).send({ message: 'Parcel not Found!' });
+         const parcelPrice = parcel.price;
+         const rate = 122.53;
+         const amountUSD = parcelPrice / rate;
+         const amountInCents = Math.round(amountUSD * 100);
+         // console.log(amountInCents, 'cent');
+
+         const { client_secret } = await stripe.paymentIntents.create({
+            amount: amountInCents,
+            currency: 'usd',
+            automatic_payment_methods: {
+               enabled: true,
+            },
+         });
+         console.log(client_secret);
+
+         res.send({ clientSecret: client_secret });
+      });
+
+      // Payment Related APIS------->
+      // Save payment details in DB
+      app.post('/payments', verifyToken, async (req, res) => {
+         const paymentDetails = req.body;
+         const result = await paymentsCollection.insertOne(paymentDetails);
+         res.send(result);
+      });
+
+      // Get specific payment data for user
+      app.get('/payments/:email', async (req, res) => {
+         const email = req.params.email;
+         const query = {
+            email,
+         };
+
+         const result = await paymentsCollection.find(query).toArray();
+         res.send(result);
+      });
+
       // ADMIN stats
       app.get('/admin/stats', verifyToken, verifyAdmin, async (req, res) => {
          const totalParcels = await parcelsCollection.estimatedDocumentCount();
@@ -457,6 +516,18 @@ async function run() {
          const totalDelivered = await parcelsCollection.countDocuments({
             bookingStatus: 'Delivered',
          });
+
+         // Total revenue
+         const revenue = await paymentsCollection
+            .aggregate([
+               {
+                  $group: {
+                     _id: null,
+                     total: { $sum: '$amount' },
+                  },
+               },
+            ])
+            .toArray();
 
          // Booking count par date
          const bookingPerDate = await parcelsCollection
@@ -473,7 +544,7 @@ async function run() {
                      totalBookings: { $sum: 1 },
                   },
                },
-               { $sort: { _id: -1 } },
+               { $sort: { _id: 1 } },
             ])
             .toArray();
          // book vs delivery
@@ -500,9 +571,11 @@ async function run() {
                      },
                   },
                },
-               { $sort: { _id: -1 } },
+               { $sort: { _id: 1 } },
             ])
             .toArray();
+
+         const totalRevenue = revenue[0].total;
 
          res.send({
             totalParcels,
@@ -510,6 +583,7 @@ async function run() {
             totalDelivered,
             bookingPerDate,
             bookedVsDelivery,
+            totalRevenue,
          });
       });
 

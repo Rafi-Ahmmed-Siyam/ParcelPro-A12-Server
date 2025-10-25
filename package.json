@@ -18,6 +18,7 @@
       "express": "^5.1.0",
       "jsonwebtoken": "^9.0.2",
       "mongodb": "^6.20.0",
-      "morgan": "^1.10.1"
+      "morgan": "^1.10.1",
+      "stripe": "^19.1.0"
    }
 }
