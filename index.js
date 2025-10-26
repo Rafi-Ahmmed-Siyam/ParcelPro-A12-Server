@@ -8,6 +8,8 @@ const cors = require('cors');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const port = process.env.port || 10000;
 
+const corsOptions = ['http://localhost:5173'];
+
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(cors());
@@ -249,6 +251,18 @@ async function run() {
          }
       );
 
+      // Update profile picture
+      app.patch('/users/pro-pic', verifyToken, async (req, res) => {
+         const { id, img } = req.body;
+         const filter = { _id: new ObjectId(id) };
+         const updateDoc = {
+            $set: { image: img },
+         };
+
+         const result = await usersCollection.updateOne(filter, updateDoc);
+         res.send(result);
+      });
+
       //------------? Delivery man PAIs
       // Add a number if deliveryman is not set a number
       app.patch(
@@ -475,8 +489,9 @@ async function run() {
          const parcelPrice = parcel.price;
          const rate = 122.53;
          const amountUSD = parcelPrice / rate;
-         const amountInCents = Math.round(amountUSD * 100);
+         let amountInCents = Math.round(amountUSD * 100);
          // console.log(amountInCents, 'cent');
+         if (amountInCents < 50) amountInCents = 50;
 
          const { client_secret } = await stripe.paymentIntents.create({
             amount: amountInCents,
@@ -485,8 +500,6 @@ async function run() {
                enabled: true,
             },
          });
-         console.log(client_secret);
-
          res.send({ clientSecret: client_secret });
       });
 
@@ -499,13 +512,18 @@ async function run() {
       });
 
       // Get specific payment data for user
-      app.get('/payments/:email', async (req, res) => {
+      app.get('/payments/:email', verifyToken, async (req, res) => {
          const email = req.params.email;
          const query = {
             email,
          };
 
-         const result = await paymentsCollection.find(query).toArray();
+         const result = await paymentsCollection
+            .find(query)
+            .sort({
+               paidAt: -1,
+            })
+            .toArray();
          res.send(result);
       });
 
@@ -585,6 +603,56 @@ async function run() {
             bookedVsDelivery,
             totalRevenue,
          });
+      });
+
+      // Stats for home page
+      app.get('/home/stats', async (req, res) => {
+         const totalParcels = await parcelsCollection.estimatedDocumentCount();
+         const totalUsers = await usersCollection.estimatedDocumentCount();
+         const totalDelivered = await parcelsCollection.countDocuments({
+            bookingStatus: 'Delivered',
+         });
+
+         res.send({ totalParcels, totalUsers, totalDelivered });
+      });
+
+      // Get top delivery man for home page
+      app.get('/top-deliveryMen', async (req, res) => {
+         const result = await usersCollection
+            .aggregate([
+               { $match: { role: 'DeliveryMen' } },
+               {
+                  $addFields: { deliveryManID: { $toString: '$_id' } },
+               },
+               {
+                  $lookup: {
+                     from: 'reviews',
+                     localField: 'deliveryManID',
+                     foreignField: 'deliveryMenId',
+                     as: 'reviews',
+                  },
+               },
+               {
+                  $addFields: { avgRating: { $avg: '$reviews.rating' } },
+               },
+               {
+                  $project: {
+                     _id: 1,
+                     name: 1,
+                     image: 1,
+                     totalDelivered: '$deliveredCount',
+                     avgRating: 1,
+                  },
+               },
+               {
+                  $limit: 3,
+               },
+               {
+                  $sort: { totalDelivered: -1 },
+               },
+            ])
+            .toArray();
+         res.send(result);
       });
 
       // await client.connect();
