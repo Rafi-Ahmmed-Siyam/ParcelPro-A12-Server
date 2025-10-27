@@ -205,7 +205,7 @@ async function run() {
       // Change User Role by admin
       app.patch('/users/role', verifyToken, verifyAdmin, async (req, res) => {
          const { id, role } = req.body;
-         console.log(id, role);
+         // console.log(id, role);
          const query = { _id: new ObjectId(id) };
          const updateDoc = {
             $set: { role },
@@ -273,7 +273,7 @@ async function run() {
          verifyDeliveryMan,
          async (req, res) => {
             const { id, phone } = req.body;
-            console.log(id, phone);
+            // console.log(id, phone);
             const query = { _id: new ObjectId(id) };
             const updateDoc = {
                $set: { phone },
@@ -308,7 +308,7 @@ async function run() {
          verifyDeliveryMan,
          async (req, res) => {
             const { parcelId, status, deliveryMenId } = req.body;
-            console.log(parcelId, status, deliveryMenId);
+            // console.log(parcelId, status, deliveryMenId);
 
             if (status === 'Delivered') {
                const userFilter = { _id: new ObjectId(deliveryMenId) };
@@ -342,8 +342,8 @@ async function run() {
       app.get('/parcels/admin', verifyToken, verifyAdmin, async (req, res) => {
          const fromDate = req.query.fromDate;
          const toDate = req.query.toDate;
-         console.log(fromDate);
-         console.log(toDate);
+         // console.log(fromDate);
+         // console.log(toDate);
 
          let query = {};
          if (fromDate && toDate) {
@@ -399,7 +399,7 @@ async function run() {
       // Delete parcel data by user
       app.delete('/parcels/:id', verifyToken, async (req, res) => {
          const id = req.params.id;
-         console.log(id);
+         // console.log(id);
          const query = { _id: new ObjectId(id) };
          const result = await parcelsCollection.deleteOne(query);
          res.send(result);
