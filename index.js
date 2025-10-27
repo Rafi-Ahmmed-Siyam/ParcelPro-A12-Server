@@ -8,11 +8,13 @@ const cors = require('cors');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const port = process.env.port || 10000;
 
-const corsOptions = ['http://localhost:5173'];
+const corsOptions = {
+   origin: ['http://localhost:5173', 'https://parcel-pro-theta.vercel.app'],
+};
 
 app.use(morgan('dev'));
 app.use(express.json());
-app.use(cors());
+app.use(cors(corsOptions));
 
 const uri = `mongodb+srv://${process.env.DB_NAME}:${process.env.DB_PASS}@cluster0.wsg3r.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
